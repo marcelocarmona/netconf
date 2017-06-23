@@ -1,0 +1,438 @@
+<!doctype html>
+<html>
+<head>
+	<title>WebRTC: Still photo capture demo</title>
+	<meta charset='utf-8'>
+  <style>
+    #video {
+      border: 1px solid black;
+      box-shadow: 2px 2px 3px black;
+      width:320px;
+      height:240px;
+    }
+
+    #photo {
+      border: 1px solid black;
+      box-shadow: 2px 2px 3px black;
+      width:320px;
+      height:240px;
+    }
+
+    #canvas {
+      display:none;
+    }
+
+    .camera {
+      width: 340px;
+      display:inline-block;
+    }
+
+    .output {
+      width: 340px;
+      display:inline-block;
+    }
+
+    #startbutton {
+      display:block;
+      position:relative;
+      margin-left:auto;
+      margin-right:auto;
+      bottom:32px;
+      background-color: rgba(0, 150, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      box-shadow: 0px 0px 1px 2px rgba(0, 0, 0, 0.2);
+      font-size: 14px;
+      font-family: "Lucida Grande", "Arial", sans-serif;
+      color: rgba(255, 255, 255, 1.0);
+    }
+
+    .contentarea {
+      font-size: 16px;
+      font-family: "Lucida Grande", "Arial", sans-serif;
+      width: 760px;
+    }
+  </style>
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js"></script>
+	<script>
+    (function() {
+      // The width and height of the captured photo. We will set the
+      // width to the value defined here, but the height will be
+      // calculated based on the aspect ratio of the input stream.
+
+      var width = 320;    // We will scale the photo width to this
+      var height = 0;     // This will be computed based on the input stream
+
+      // |streaming| indicates whether or not we're currently streaming
+      // video from the camera. Obviously, we start at false.
+
+      var streaming = false;
+
+      // The various HTML elements we need to configure or control. These
+      // will be set by the startup() function.
+
+      var video = null;
+      var canvas = null;
+      var photo = null;
+      var startbutton = null;
+      var sendbutton = null;
+      var myblob = null;
+
+      function startup() {
+        video = document.getElementById('video');
+        canvas = document.getElementById('canvas');
+        canvas2 = document.getElementById('canvas2');
+        photo = document.getElementById('photo');
+        startbutton = document.getElementById('startbutton');
+        sendbutton = document.getElementById('sendbutton');
+        result = document.getElementById('result');
+
+        navigator.getMedia = ( navigator.getUserMedia ||
+                              navigator.webkitGetUserMedia ||
+                              navigator.mozGetUserMedia ||
+                              navigator.msGetUserMedia);
+
+        navigator.getMedia(
+          {
+            video: true,
+            audio: false
+          },
+          function(stream) {
+            if (navigator.mozGetUserMedia) {
+              video.mozSrcObject = stream;
+            } else {
+              var vendorURL = window.URL || window.webkitURL;
+              video.src = vendorURL.createObjectURL(stream);
+            }
+            video.play();
+          },
+          function(err) {
+            console.log("An error occured! " + err);
+          }
+        );
+
+        video.addEventListener('canplay', function(ev){
+          if (!streaming) {
+            height = video.videoHeight / (video.videoWidth/width);
+
+            // Firefox currently has a bug where the height can't be read from
+            // the video, so we will make assumptions if this happens.
+
+            if (isNaN(height)) {
+              height = width / (4/3);
+            }
+
+            video.setAttribute('width', width);
+            video.setAttribute('height', height);
+            canvas.setAttribute('width', width);
+            canvas.setAttribute('height', height);
+            streaming = true;
+          }
+        }, false);
+
+        startbutton.addEventListener('click', function(e){
+          takepicture();
+          e.preventDefault();
+        }, false);
+
+        sendbutton.addEventListener('click', function(e){
+          sendApi();
+          e.preventDefault();
+        }, false);
+
+        clearphoto();
+      }
+
+      // Fill the photo with an indication that none has been
+      // captured.
+
+      function clearphoto() {
+        var context = canvas.getContext('2d');
+        context.fillStyle = "#AAA";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        var data = canvas.toDataURL('image/png');
+        photo.setAttribute('src', data);
+      }
+
+      // Capture a photo by fetching the current contents of the video
+      // and drawing it into a canvas, then converting that to a PNG
+      // format data URL. By drawing it on an offscreen canvas and then
+      // drawing that to the screen, we can change its size and/or apply
+      // other changes before drawing it.
+
+      function takepicture() {
+        var context = canvas.getContext('2d');
+        if (width && height) {
+          canvas.width = width;
+          canvas.height = height;
+          context.drawImage(video, 0, 0, width, height);
+
+          var data = canvas.toDataURL('image/png');
+          myblob = createBlob(data);
+          debugger
+
+          photo.setAttribute('src', data);
+        } else {
+          clearphoto();
+        }
+      }
+
+      function sendApi() {debugger
+            var params = {
+                // Request parameters
+            };
+
+            $.ajax({
+                // NOTE: You must use the same location in your REST call as you used to obtain your subscription keys.
+                //   For example, if you obtained your subscription keys from westcentralus, replace "westus" in the
+                //   URL below with "westcentralus".
+                url: "https://westus.api.cognitive.microsoft.com/emotion/v1.0/recognize?" + $.param(params),
+                beforeSend: function(xhrObj){
+                    // Request headers
+                    xhrObj.setRequestHeader("Content-Type","application/octet-stream");
+
+                    // NOTE: Replace the "Ocp-Apim-Subscription-Key" value with a valid subscription key.
+                    xhrObj.setRequestHeader("Ocp-Apim-Subscription-Key","c43f3fc7c8a948dea3a7209defb50f59");
+                },
+                type: "POST",
+                // Request body
+                data: myblob,
+                processData : false
+            })
+            .done(function(data) {
+                apiresponse = document.getElementById('apiresponse');
+                apiresponse.innerText = JSON.stringify(data[0].scores);
+
+                var myBarchart = new Barchart(
+                    {
+                        canvas: canvas,
+                        seriesName:"anger contempt disgust fear happiness neutral sadness surprise",
+                        padding:20,
+                        gridScale:5,
+                        gridColor:"#eeeeee",
+                        data:data[0].scores,
+                        colors:["#a55ca5","#67b6c7", "#bccd7a","#eb9743","#a55ca5","#67b6c7", "#bccd7a","#eb9743"]
+                    }
+                );
+                //myBarchart.draw();
+
+                var ctx = canvas.getContext("2d");
+
+                // Green rectangle
+                var face = {
+                  height: data[0].faceRectangle.height,
+                  left: data[0].faceRectangle.left,
+                  top: data[0].faceRectangle.top,
+                  width: data[0].faceRectangle.width,
+                }
+                ctx.beginPath();
+                ctx.lineWidth="4";
+                ctx.strokeStyle="green";
+                ctx.rect(face.left,face.top,face.width,face.height);
+                ctx.stroke();
+
+                ctx.fillStyle = "blue";
+                ctx.font = "bold 16px Arial";
+                ctx.fillText('anger: ' + (data[0].scores['anger']* 100).toFixed(2) + " %",10,20);
+                ctx.fillText('contempt: ' + (data[0].scores['contempt']* 100).toFixed(2) + " %",10,40);
+                ctx.fillText('disgust: ' + (data[0].scores['disgust']* 100).toFixed(2) + " %",10,60);
+                ctx.fillText('fear: ' + (data[0].scores['fear']* 100).toFixed(2) + " %",10,80);
+                ctx.fillText('happiness: ' + (data[0].scores['happiness']* 100).toFixed(2) + " %",10,100);
+                ctx.fillText('neutral: ' + (data[0].scores['neutral']* 100).toFixed(2) + " %",10,120);
+                ctx.fillText('sadness: ' + (data[0].scores['sadness']* 100).toFixed(2) + " %",10,140);
+                ctx.fillText('surprise: ' + (data[0].scores['surprise']* 100).toFixed(2) + " %",10,160);
+
+
+
+                ctx.drawImage(canvas, 0, 0, width, height);
+                var data = canvas.toDataURL('image/png');
+                photo.setAttribute('src', data);
+
+                // apiresponse.innerText = JSON.stringify(data);
+                debugger
+
+                //result.innerText = Object.keys(data[0].scores).map( key => data[0].scores[key])
+
+                alert("success");
+            })
+            .fail(function(error) {
+                alert("error");
+            });
+      }
+
+      function createBlob(dataURL) {
+        var BASE64_MARKER = ';base64,';
+        if (dataURL.indexOf(BASE64_MARKER) == -1) {
+          var parts = dataURL.split(',');
+          var contentType = parts[0].split(':')[1];
+          var raw = decodeURIComponent(parts[1]);
+          return new Blob([raw], { type: contentType });
+        }
+        var parts = dataURL.split(BASE64_MARKER);
+        var contentType = parts[0].split(':')[1];
+        var raw = window.atob(parts[1]);
+        var rawLength = raw.length;
+
+        var uInt8Array = new Uint8Array(rawLength);
+
+        for (var i = 0; i < rawLength; ++i) {
+          uInt8Array[i] = raw.charCodeAt(i);
+        }
+
+        return new Blob([uInt8Array], { type: contentType });
+      }
+
+
+      var Barchart = function(options){
+          this.options = options;
+          this.canvas = options.canvas;
+          this.ctx = this.canvas.getContext("2d");
+          this.colors = options.colors;
+
+          this.draw = function(){
+              var maxValue = 0;
+              for (var categ in this.options.data){
+                  maxValue = Math.max(maxValue,this.options.data[categ]);
+              }
+              var canvasActualHeight = this.canvas.height - this.options.padding * 2;
+              var canvasActualWidth = this.canvas.width - this.options.padding * 2;
+
+              //drawing the grid lines
+              var gridValue = 0;
+              while (gridValue <= maxValue){
+                  var gridY = canvasActualHeight * (1 - gridValue/maxValue) + this.options.padding;
+                  drawLine(
+                      this.ctx,
+                      0,
+                      gridY,
+                      this.canvas.width,
+                      gridY,
+                      this.options.gridColor
+                  );
+
+                  //writing grid markers
+                  this.ctx.save();
+                  this.ctx.fillStyle = this.options.gridColor;
+                  this.ctx.textBaseline="bottom";
+                  this.ctx.font = "bold 10px Arial";
+                  this.ctx.fillText(gridValue, 10,gridY - 2);
+                  this.ctx.restore();
+
+                  gridValue+=this.options.gridScale;
+              }
+
+              //drawing the bars
+              var barIndex = 0;
+              var numberOfBars = Object.keys(this.options.data).length;
+              var barSize = (canvasActualWidth)/numberOfBars;
+
+              for (categ in this.options.data){
+                  var val = this.options.data[categ];
+                  var barHeight = Math.round( canvasActualHeight * val/maxValue) ;
+                  drawBar(
+                      this.ctx,
+                      this.options.padding + barIndex * barSize,
+                      this.canvas.height - barHeight - this.options.padding,
+                      barSize,
+                      barHeight,
+                      this.colors[barIndex%this.colors.length]
+                  );
+
+                  barIndex++;
+              }
+
+              //drawing series name
+              this.ctx.save();
+              this.ctx.textBaseline="bottom";
+              this.ctx.textAlign="center";
+              this.ctx.fillStyle = "#000000";
+              this.ctx.font = "bold 8px Arial";
+              this.ctx.fillText(this.options.seriesName, this.canvas.width/2,this.canvas.height);
+              this.ctx.restore();
+
+              //draw legend
+              barIndex = 0;
+              var legend = document.querySelector("legend[for='myCanvas']");
+              var ul = document.createElement("ul");
+              legend.removeChild(legend.getElementsByTagName('ul')[0]);
+              legend.append(ul);
+              for (categ in this.options.data){
+                  var val = this.options.data[categ];
+                  var li = document.createElement("li");
+                  li.style.listStyle = "none";
+                  li.style.borderLeft = 200 * val + "px solid "+this.colors[barIndex%this.colors.length];
+                  li.style.padding = "5px";
+                  li.textContent = categ;
+                  ul.append(li);
+                  barIndex++;
+              }
+              this.ctx.drawImage(this.canvas, 0, 0, width, height);
+              var data = canvas.toDataURL('image/png');
+              photo.setAttribute('src', data);
+          }
+      }
+
+function drawLine(ctx, startX, startY, endX, endY,color){
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(startX,startY);
+    ctx.lineTo(endX,endY);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawBar(ctx, upperLeftCornerX, upperLeftCornerY, width, height,color){
+    ctx.save();
+    ctx.fillStyle=color;
+    ctx.fillRect(upperLeftCornerX,upperLeftCornerY,width,height);
+    ctx.restore();
+}
+
+var myVinyls = {
+    "Classical music": 10,
+    "Alternative rock": 14,
+    "Pop": 2,
+    "Jazz": 12
+};
+
+      // Set up our event listener to run the startup process
+      // once loading is complete.
+      window.addEventListener('load', startup, false);
+
+    sendbutton2 = document.getElementById('sendbutton2');
+
+    })();
+
+
+	</script>
+</head>
+<body>
+<div class="contentarea">
+	<h1>
+		DEMO
+	</h1>
+  <div class="camera">
+    <video id="video">Video stream not available.</video>
+    <button id="startbutton">Take photo</button>
+  </div>
+  <canvas id="canvas">
+  </canvas>
+  <div class="output">
+    <img id="photo" alt="The screen capture will appear in this box.">
+    <button id="sendbutton">send</button>
+    <button id="sendbutton2">send2</button>
+  </div>
+  <div id="result"></div>
+  <div>
+    <pre id="apiresponse"></pre>
+  </div>
+  <canvas id="canvas2">
+  </canvas>
+  <legend for="myCanvas">
+    <ul></ul>
+  </legend>
+
+</div>
+</body>
+</html>
